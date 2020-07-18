@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+from torch.distributions import Categorical
 
 class Agent(nn.Module):
     def __init__(self, env, h_size=16):
@@ -46,6 +47,13 @@ class Agent(nn.Module):
         x = F.relu(self.fc1(x))
         x = F.softmax(self.fc2(x))
         return x
+
+    def act(self, state):
+        state = state.unsqueeze(0)
+        probs = self.forward(state).cpu()
+        m = Categorical(probs)
+        action = m.sample()
+        return action.item()
         
     def evaluate(self, weights, gamma=1.0, max_t=5000):
         self.set_weights(weights)
@@ -53,8 +61,7 @@ class Agent(nn.Module):
         state = self.env.reset()
         for t in range(max_t):
             state = torch.from_numpy(state).float().to(self.device)
-            action_vals = self.forward(state)
-            action = torch.argmax(action_vals).item()
+            action = self.act(state)
             state, reward, done, _ = self.env.step(action)
             episode_return += reward * math.pow(gamma, t)
             if done:
@@ -81,7 +88,6 @@ class Agent(nn.Module):
         best_weight = sigma*np.random.randn(self.get_weights_dim()) # initialize the first best weight randomly
 
         for i_iteration in range(1, n_iterations+1): # loop over all the training iterations
-            self.env.render()
             weights_pop = [best_weight + (sigma*np.random.randn(self.get_weights_dim())) for i in range(pop_size)] # population of the weights/policies
             rewards = np.array([self.evaluate(weights, gamma, max_t) for weights in weights_pop]) # rewards from the policies resulting from all individual weights
 
@@ -97,7 +103,7 @@ class Agent(nn.Module):
             scores_deque.append(reward) # append the reward
             scores.append(reward) # also append the reward
             
-            torch.save(self.state_dict(), 'checkpoint.pth') # save the agent
+            torch.save(self.state_dict(), './saved_models/checkpoint_cem.pth') # save the agent
             
             if i_iteration % print_every == 0: # print every 100 steps
                 print('Episode {}\tAverage Score: {:.2f}'.format(i_iteration, np.mean(scores_deque)))
